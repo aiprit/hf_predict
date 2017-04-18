@@ -12,7 +12,7 @@ object Main {
 
     val sc = createContext
     val sqlContext = new SQLContext(sc)
-    
+
     val notes_df = sqlContext.csvFile("data/NOTEEVENTS.csv")
     notes_df.registerTempTable("note_events")
     println(notes_df.show(10))
