@@ -328,10 +328,13 @@ def train_GRU_RNN(
 
 # train_GRU_RNN(dataFile=dataFile, labelFile=labelFile, timeFile=timeFile, outFile=outFile, inputDimSize=inputDimSize, hiddenDimSize=hiddenDimSize, max_epochs=max_epochs, L2_reg=L2_reg, batchSize=batchSize, use_dropout=use_dropout)
 if __name__ == '__main__':
-    dataFile = "feature_construction_output.csv"
-    timeFile = "feature_construction_output_dates.csv"
-    outFile = "output.txt"
+    # dataFile = "feature_construction_output.csv"
+    # timeFile = "feature_construction_output_dates.csv"
+    # outFile = "output.txt"
 
+    dataFile = sys.argv[1]
+    timeFile = sys.argv[2]
+    outFile = sys.argv[3]
     inputDimSize = 5133 #The number of unique medical codes
     hiddenDimSize = 100#The size of the hidden layer of the GRU
     max_epochs = 100 #Maximum epochs to train
