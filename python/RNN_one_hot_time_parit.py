@@ -28,14 +28,12 @@ def init_params(options):
 
     params['W_emb'] = np.eye(inputDimSize, dtype=config.floatX)
 
-    params['W_gru'] = get_random_weight(inputDimSize, 3*hiddenDimSize)
+    params['W_gru'] = get_random_weight(inputDimSize+1, 3*hiddenDimSize)
     params['U_gru'] = get_random_weight(hiddenDimSize, 3*hiddenDimSize)
     params['b_gru'] = np.zeros(3*hiddenDimSize).astype(config.floatX)
 
     params['W_logistic'] = get_random_weight(hiddenDimSize,1)
     params['b_logistic'] = np.zeros((1,), dtype=config.floatX)
-
-    #params = [params['W_emb'],params['W_gru'],params['U_gru'],params['b_gru'],params['W_logistic'],params['b_logistic']]
 
     return params
 
@@ -80,38 +78,32 @@ def build_model(tparams, options, Wemb):
     use_noise = theano.shared(numpy_floatX(0.))
 
     x = T.matrix('x', dtype='int32')
+    t = T.matrix('t', dtype=config.floatX)
     mask = T.matrix('mask', dtype=config.floatX)
     y = T.vector('y', dtype='int32')
 
     n_timesteps = x.shape[0]
     n_samples = x.shape[1]
 
-    emb = Wemb[x.flatten()].reshape([n_timesteps,n_samples,options['inputDimSize']])
+    x_emb = Wemb[x.flatten()].reshape([n_timesteps,n_samples,options['inputDimSize']])
+    x_t_emb = T.concatenate([t.reshape([n_timesteps,n_samples,1]), x_emb], axis=2) #Adding the time element to the embedding
 
-    proj = gru_layer(tparams, emb, options, mask=mask)
+    proj = gru_layer(tparams, x_t_emb, options, mask=mask)
     if options['use_dropout']: proj = dropout_layer(proj, use_noise, trng)
 
     p_y_given_x = T.nnet.sigmoid(T.dot(proj, tparams['W_logistic']) + tparams['b_logistic'])
     L = -(y * T.flatten(T.log(p_y_given_x)) + (1 - y) * T.flatten(T.log(1 - p_y_given_x)))
-
-    #print (L)
     cost = T.mean(L)
 
     if options['L2_reg'] > 0.: cost += options['L2_reg'] * (tparams['W_logistic'] ** 2).sum()
 
-    #print ("***************", cost)
+    return use_noise, x, t, mask, y, p_y_given_x, cost
 
-    return use_noise, x, mask, y, p_y_given_x, cost
+def load_data(seqFile, timeFile=''):
+    # sequences = np.array(pickle.load(open(seqFile, 'rb')))
+    # labels = np.array(pickle.load(open(labelFile, 'rb')))
 
-def load_data(inputFile, timeFile=''):
-
-    #print ('&&&&&&&&&&&&&&&&&&&&&&&&&&&&&',seqFile)
-    # open pickle file
-    #with open(seqFile, 'rb') as f:
-    #   f.seek(0)
-#       temp = pickle.load(f)
-
-    with open(inputFile) as f:
+    with open(seqFile) as f:
         content = f.readlines()
     # you may also want to remove whitespace characters like `\n` at the end of each line
     content = [x.strip().split(",") for x in content]
@@ -135,6 +127,30 @@ def load_data(inputFile, timeFile=''):
         train.append(seq)
         labels[i-1] = listing[0]
     sequences = np.array(train)
+
+    if len(timeFile) > 0:
+        with open("feature_construction_output_dates.csv") as f:
+            content = f.readlines()
+        # you may also want to remove whitespace characters like `\n` at the end of each line
+        contentdate = [x.strip().split(",") for x in content]
+
+        flattenedsetdates = list(set([val[0:10] for sublist in contentdate for val in sublist]))
+        mappingdate = {}
+        mapdate = enumerate(flattenedsetdates)
+        for i,a in mapdate:
+            mappingdate[a] = i
+        dates = list()
+        for listing in contentdate:
+            seq = list()
+            for i in range(0,len(listing)):
+        #         print(listing[i])
+                if i ==0:
+                    continue
+                seq.append( mappingdate[listing[i][0:10]])
+        #     print(seq)
+            dates.append(seq)
+        times = np.array(dates)
+        #times = np.array(pickle.load(open(timeFile, 'rb')))
 
     dataSize = len(labels)
     ind = np.random.permutation(dataSize)
@@ -186,7 +202,7 @@ def load_data(inputFile, timeFile=''):
 
     return train_set, valid_set, test_set,len(flattenedset)
 
-def adadelta(tparams, grads, x, mask, y, cost):
+def adadelta(tparams, grads, x, t, mask, y, cost):
     zipped_grads = [theano.shared(p.get_value() * numpy_floatX(0.), name='%s_grad' % k) for k, p in tparams.items()]
     running_up2 = [theano.shared(p.get_value() * numpy_floatX(0.), name='%s_rup2' % k) for k, p in tparams.items()]
     running_grads2 = [theano.shared(p.get_value() * numpy_floatX(0.), name='%s_rgrad2' % k) for k, p in tparams.items()]
@@ -194,7 +210,7 @@ def adadelta(tparams, grads, x, mask, y, cost):
     zgup = [(zg, g) for zg, g in zip(zipped_grads, grads)]
     rg2up = [(rg2, 0.95 * rg2 + 0.05 * (g ** 2)) for rg2, g in zip(running_grads2, grads)]
 
-    f_grad_shared = theano.function([x, mask, y], cost, updates=zgup + rg2up, name='adadelta_f_grad_shared')
+    f_grad_shared = theano.function([x, t, mask, y], cost, updates=zgup + rg2up, name='adadelta_f_grad_shared')
 
     updir = [-T.sqrt(ru2 + 1e-6) / T.sqrt(rg2 + 1e-6) * zg for zg, ru2, rg2 in zip(zipped_grads, running_up2, running_grads2)]
     ru2up = [(ru2, 0.95 * ru2 + 0.05 * (ud ** 2)) for ru2, ud in zip(running_up2, updir)]
@@ -209,34 +225,31 @@ def calculate_auc(test_model, datasets):
     n_batches = int(np.ceil(float(len(datasets[0])) / float(batchSize)))
     scoreVec = []
     for index in range(n_batches):
-        #print (index)
-        x, mask = padMatrix(datasets[0][index*batchSize: (index+1)*batchSize])
-        scoreVec.extend(list(test_model(x, mask)))
+        x, t, mask = padMatrix(datasets[0][index*batchSize:(index+1)*batchSize], datasets[2][index*batchSize:(index+1)*batchSize])
+        scoreVec.extend(list(test_model(x, t, mask)))
     labels = datasets[1]
-    #print ("&&&&&&&&&&&&&&&&&&&&&&")
-    #print (list(labels))
-    #print ("^^^^^^^^^^^^^^^^")
-    #print (list(scoreVec))
     auc = roc_auc_score(list(labels), list(scoreVec))
-
     return auc
 
-def padMatrix(seqs):
+def padMatrix(seqs, times):
     lengths = [len(s) for s in seqs]
     n_samples = len(seqs)
     maxlen = np.max(lengths)
 
     x = np.zeros((maxlen, n_samples)).astype('int32')
+    t = np.zeros((maxlen, n_samples)).astype(config.floatX)
     x_mask = np.zeros((maxlen, n_samples)).astype(config.floatX)
-    for idx, s in enumerate(seqs):
-        x[:lengths[idx], idx] = s
+    for idx, (seq, time) in enumerate(zip(seqs,times)):
+        x[:lengths[idx], idx] = seq
+        t[:lengths[idx], idx] = time
         x_mask[:lengths[idx], idx] = 1.
+    t = np.log(t + 1.)
 
-    return x, x_mask
+    return x, t, x_mask
 
 def train_GRU_RNN(
     dataFile='data.txt',
-    # labelFile='label.txt',
+    timeFile='',
     outFile='out.txt',
     inputDimSize= 100,
     hiddenDimSize=100,
@@ -246,9 +259,8 @@ def train_GRU_RNN(
     use_dropout=True
 ):
 
-
     print ('Loading data ... ')
-    trainSet, validSet, testSet,inputDimSize = load_data(dataFile)
+    trainSet, validSet, testSet,inputDimSize = load_data(dataFile, timeFile=timeFile)
     options = locals().copy()
 
     n_batches = int(np.ceil(float(len(trainSet[0])) / float(batchSize)))
@@ -258,46 +270,34 @@ def train_GRU_RNN(
     params = init_params(options)
     tparams = init_tparams(params)
     Wemb = theano.shared(params['W_emb'], name='W_emb')
-    #print (tparams)
-    #print (options)
-    #print (Wemb)
-    use_noise, x, mask, y, p_y_given_x, cost =  build_model(tparams, options, Wemb)
+    use_noise, x, t, mask, y, p_y_given_x, cost =  build_model(tparams, options, Wemb)
     print ('done!!')
 
     print ('Constructing the optimizer ... ')
-    #print ("#############################")
-    #print (tparams.values())
+    #grads = T.grad(cost, wrt=tparams.values())
 
     grads  = []
     for param in tparams.values():
-            gparam = T.grad(cost, param)
-            grads.append(gparam)
+        gparam = T.grad(cost, param)
+        grads.append(gparam)
 
-    #print (grads)
 
-    #grads = T.grad(cost, wrt=tparams.items())
-    #grads = T.grad(cost, wrt=Wemb)
-    #print (grads)
-    #print ("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&")
-    f_grad_shared, f_update = adadelta(tparams, grads, x, mask, y, cost)
+    f_grad_shared, f_update = adadelta(tparams, grads, x, t, mask, y, cost)
     print ('done!!')
 
-    test_model = theano.function(inputs=[x, mask], outputs=p_y_given_x, name='test_model')
+    test_model = theano.function(inputs=[x, t, mask], outputs=p_y_given_x, name='test_model')
 
     bestValidAuc = 0.
     bestTestAuc = 0.
     iteration = 0
     bestParams = OrderedDict()
     print ('Optimization start !!')
-    # print('n batches =',n_batches)
-    # print('trainSet = ',len(trainSet[0]),len(trainSet[1]))
     for epoch in range(max_epochs):
         for index in random.sample(range(n_batches), n_batches):
             use_noise.set_value(1.)
-            x, mask = padMatrix(trainSet[0][index*batchSize:(index+1)*batchSize])
+            x, t, mask = padMatrix(trainSet[0][index*batchSize:(index+1)*batchSize], trainSet[2][index*batchSize:(index+1)*batchSize])
             y = trainSet[1][index*batchSize:(index+1)*batchSize]
-            # print(len(x),len(mask),len(y))
-            cost = f_grad_shared(x, mask, y)
+            cost = f_grad_shared(x, t, mask, y)
             f_update()
             iteration += 1
 
@@ -313,17 +313,33 @@ def train_GRU_RNN(
 
     np.savez_compressed(outFile, **bestParams)
 
+# if __name__ == '__main__':
+#     dataFile = sys.argv[1]
+#     timeFile = sys.argv[2]
+#     labelFile = sys.argv[3]
+#     outFile = sys.argv[4]
+
+#     inputDimSize = 100 #The number of unique medical codes
+#     hiddenDimSize = 100 #The size of the hidden layer of the GRU
+#     max_epochs = 100 #Maximum epochs to train
+#     L2_reg = 0.001 #L2 regularization for the logistic weight
+#     batchSize = 10 #The size of the mini-batch
+#     use_dropout = True #Whether to use a dropout between the GRU and the logistic layer
+
+# train_GRU_RNN(dataFile=dataFile, labelFile=labelFile, timeFile=timeFile, outFile=outFile, inputDimSize=inputDimSize, hiddenDimSize=hiddenDimSize, max_epochs=max_epochs, L2_reg=L2_reg, batchSize=batchSize, use_dropout=use_dropout)
 if __name__ == '__main__':
+    # dataFile = "feature_construction_output.csv"
+    # timeFile = "feature_construction_output_dates.csv"
+    # outFile = "output.txt"
+
     dataFile = sys.argv[1]
-    # labelFile = sys.argv[2]
-    outFile = sys.argv[2]
-
-
-    inputDimSize = 100 #The number of unique medical codes
+    timeFile = sys.argv[2]
+    outFile = sys.argv[3]
+    inputDimSize = 5133 #The number of unique medical codes
     hiddenDimSize = 100#The size of the hidden layer of the GRU
     max_epochs = 100 #Maximum epochs to train
     L2_reg = 0.001 #L2 regularization for the logistic weight
     batchSize = 100 #The size of the mini-batch
     use_dropout = True #Whether to use a dropout between the GRU and the logistic layer
 
-train_GRU_RNN(dataFile=dataFile, outFile=outFile, inputDimSize=inputDimSize, hiddenDimSize=hiddenDimSize, max_epochs=max_epochs, L2_reg=L2_reg, batchSize=batchSize, use_dropout=use_dropout)
+train_GRU_RNN(dataFile=dataFile, timeFile=timeFile, outFile=outFile, inputDimSize=inputDimSize, hiddenDimSize=hiddenDimSize, max_epochs=max_epochs, L2_reg=L2_reg, batchSize=batchSize, use_dropout=use_dropout)
