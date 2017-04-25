@@ -5,7 +5,7 @@ from sklearn.neighbors import NearestNeighbors
 from datetime import datetime
 
 
-case_df = pd.read_csv('output.csv', header=None, names=['subject_id', 'hadm_id', 'hdfx'])
+case_df = pd.read_csv('case_patients.csv', header=None, names=['subject_id', 'hadm_id', 'hdfx'])
 knn_df = pd.read_csv('patient_knn_data.csv')
 
 
