@@ -14,14 +14,16 @@ result = []
 for patient_id in patient_id_set:
     patient_data = df[df['subject_id'] == patient_id]
     events = [patient_data['hf'].values[0]]
-    for event in list(patient_data['admittime']):
-    # for event in list(patient_data['event_id']):
+    # for event in list(patient_data['admittime']):
+    for event in list(patient_data['event_id']):
         events.append(event)
+    if len(events) < 50:
+        continue
     result.append(events)
 
 print(len(result))
 
-# with open("feature_construction_output.csv", "w") as f:
-with open("feature_construction_output_dates.csv", "w") as f:
+with open("feature_construction_output_50_events.csv", "w") as f:
+# with open("feature_construction_output_dates.csv", "w") as f:
     writer = csv.writer(f)
     writer.writerows(result)
