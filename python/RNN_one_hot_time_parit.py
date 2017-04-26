@@ -129,7 +129,7 @@ def load_data(seqFile, timeFile=''):
     sequences = np.array(train)
 
     if len(timeFile) > 0:
-        with open("feature_construction_output_dates.csv") as f:
+        with open(timeFile) as f:
             content = f.readlines()
         # you may also want to remove whitespace characters like `\n` at the end of each line
         contentdate = [x.strip().split(",") for x in content]
@@ -151,6 +151,7 @@ def load_data(seqFile, timeFile=''):
             dates.append(seq)
         times = np.array(dates)
         #times = np.array(pickle.load(open(timeFile, 'rb')))
+    print (sequences.shape,times.shape)
 
     dataSize = len(labels)
     ind = np.random.permutation(dataSize)
