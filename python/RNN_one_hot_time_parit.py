@@ -7,6 +7,8 @@ from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 import _pickle as pickle
 from collections import OrderedDict
 from sklearn.metrics import roc_auc_score
+import time
+
 
 def unzip(zipped):
     new_params = OrderedDict()
@@ -296,6 +298,8 @@ def train_GRU_RNN(
     bestParams = OrderedDict()
     print ('Optimization start !!')
     for epoch in range(max_epochs):
+        start = time.time()
+
         for index in random.sample(range(n_batches), n_batches):
             use_noise.set_value(1.)
             x, t, mask = padMatrix(trainSet[0][index*batchSize:(index+1)*batchSize], trainSet[2][index*batchSize:(index+1)*batchSize])
@@ -303,6 +307,10 @@ def train_GRU_RNN(
             cost = f_grad_shared(x, t, mask, y)
             f_update()
             iteration += 1
+        
+        end = time.time()
+        diff = end - start
+        print('Time for epoch: ' + str(diff))
 
         use_noise.set_value(0.)
         validAuc = calculate_auc(test_model, validSet)

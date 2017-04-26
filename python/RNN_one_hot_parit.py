@@ -7,6 +7,7 @@ from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 import _pickle as pickle
 from collections import OrderedDict
 from sklearn.metrics import roc_auc_score
+import time
 
 def unzip(zipped):
     new_params = OrderedDict()
@@ -61,17 +62,17 @@ def gru_layer(tparams, emb, options, mask=None):
     if emb.ndim == 3: n_samples = emb.shape[1]
     else: n_samples = 1
 
-    def stepFn(stepMask, wx, h, U_gru):
+    def stepFn(stepMask, wx, emb, h, U_gru):
         uh = T.dot(h, U_gru)
         r = T.nnet.sigmoid(_slice(wx, 0, hiddenDimSize) + _slice(uh, 0, hiddenDimSize))
         z = T.nnet.sigmoid(_slice(wx, 1, hiddenDimSize) + _slice(uh, 1, hiddenDimSize))
-        h_tilde = T.tanh(_slice(wx, 2, hiddenDimSize) + r * _slice(uh, 2, hiddenDimSize))
-        h_new = z * h + ((1. - z) * h_tilde)
+        # h_tilde = T.tanh((r * _slice(uh, 2, hiddenDimSize)) + T.tanh(emb)) * z + (1. - z) * h
+        h_new = T.tanh((r * _slice(uh, 2, hiddenDimSize)) + T.tanh(emb)) * z + (1. - z) * h
         h_new = stepMask[:, None] * h_new + (1. - stepMask)[:, None] * h
         return h_new
 
     Wx = T.dot(emb, tparams['W_gru']) + tparams['b_gru']
-    results, updates = theano.scan(fn=stepFn, sequences=[mask,Wx], outputs_info=T.alloc(numpy_floatX(0.0), n_samples, hiddenDimSize), non_sequences=[tparams['U_gru']], name='gru_layer', n_steps=timesteps)
+    results, updates = theano.scan(fn=stepFn, sequences=[mask,Wx,emb], outputs_info=T.alloc(numpy_floatX(0.0), n_samples, hiddenDimSize), non_sequences=[tparams['U_gru']], name='gru_layer', n_steps=timesteps)
 
     return results[-1] #We only care about the last status of the hidden layer
 
@@ -292,7 +293,9 @@ def train_GRU_RNN(
     print ('Optimization start !!')
     # print('n batches =',n_batches)
     # print('trainSet = ',len(trainSet[0]),len(trainSet[1]))
+
     for epoch in range(max_epochs):
+        start = time.time()
         for index in random.sample(range(n_batches), n_batches):
             use_noise.set_value(1.)
             x, mask = padMatrix(trainSet[0][index*batchSize:(index+1)*batchSize])
@@ -301,6 +304,9 @@ def train_GRU_RNN(
             cost = f_grad_shared(x, mask, y)
             f_update()
             iteration += 1
+        end = time.time()
+        diff = end - start
+        print('Time for epoch: ' + str(diff))
 
         use_noise.set_value(0.)
         validAuc = calculate_auc(test_model, validSet)
