@@ -123,8 +123,8 @@ def load_data(inputFile, timeFile=''):
 
     train = list()
     labels = np.zeros(len(content))
+    count=0
     for listing in content:
-
         seq = list()
         for i in range(0,len(listing)):
             if i ==0:
@@ -133,7 +133,8 @@ def load_data(inputFile, timeFile=''):
                 seq.append( mapping[listing[i]])
     #     print(seq)
         train.append(seq)
-        labels[i-1] = listing[0]
+        labels[count] = listing[0]
+        count = count +1
     sequences = np.array(train)
 
     dataSize = len(labels)
