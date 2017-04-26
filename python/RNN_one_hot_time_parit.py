@@ -307,7 +307,7 @@ def train_GRU_RNN(
             cost = f_grad_shared(x, t, mask, y)
             f_update()
             iteration += 1
-        
+
         end = time.time()
         diff = end - start
         print('Time for epoch: ' + str(diff))
