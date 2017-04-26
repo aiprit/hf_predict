@@ -115,6 +115,7 @@ def load_data(seqFile, timeFile=''):
 
     train = list()
     labels = np.zeros(len(content))
+    count = 0
     for listing in content:
 
         seq = list()
@@ -125,7 +126,8 @@ def load_data(seqFile, timeFile=''):
                 seq.append( mapping[listing[i]])
     #     print(seq)
         train.append(seq)
-        labels[i-1] = listing[0]
+        labels[count] = listing[0]
+        count += 1
     sequences = np.array(train)
 
     if len(timeFile) > 0:
